@@ -1,0 +1,8 @@
+//
+// Created by user on 8/17/2026.
+//
+
+#ifndef NUCLEO_G474RE_DRIVER_UART_H
+#define NUCLEO_G474RE_DRIVER_UART_H
+
+#endif //NUCLEO_G474RE_DRIVER_UART_H
