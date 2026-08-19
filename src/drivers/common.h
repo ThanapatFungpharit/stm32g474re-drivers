@@ -1,13 +1,9 @@
-//
-// Created by user on 8/17/2026.
-//
-
 #ifndef NUCLEO_G474RE_DRIVER_COMMON_H
 #define NUCLEO_G474RE_DRIVER_COMMON_H
 
 typedef enum {
-    ENABLE,
-    DISABLE
+    STATE_DISABLE = 0b0,
+    STATE_ENABLE  = 0b1,
 } EnableState;
 
 #endif //NUCLEO_G474RE_DRIVER_COMMON_H
