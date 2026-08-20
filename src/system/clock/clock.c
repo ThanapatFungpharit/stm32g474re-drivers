@@ -264,7 +264,8 @@ void setClockSpeed(const ClockSpeed speed)
             break;
 
         case CLOCKSPEED_170MHZ:
-            /* Range 1 boost mode requires HCLK to be divided by two first. */
+            /* Range 1 boost mode requires HCLK to be divided by two while
+             * the switch to the higher frequency takes place. */
             RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_HPRE) | RCC_CFGR_HPRE_DIV2;
             setPowerSupply(POWERSUPPLY_SMPS);
             flashSetLatency(FLASH_ACR_LATENCY_4WS);
@@ -276,9 +277,13 @@ void setClockSpeed(const ClockSpeed speed)
                 0U      /* PLLR = /2 */
             );
 
-            resetBusPrescalers();
             setSourceClockState(CLOCKSOURCE_PLL, STATE_ENABLE);
             switchClockSource(CLOCKSOURCE_PLL);
+            
+            /* HCLK is now clocked from PLL at half rate (HPRE = /2).
+             * Restore the AHB/APB prescalers to /1 now that the switch
+             * is complete, bringing HCLK up to the full 170 MHz. */
+            resetBusPrescalers();
             break;
 
         default:
