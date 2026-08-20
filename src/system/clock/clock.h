@@ -6,7 +6,6 @@
 #include "drivers/common.h"
 #include "drivers/power/power.h"
 #include "system/panic/panic.h"
-#include "drivers/common.h"
 
 
 /* Clock source */
