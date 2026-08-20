@@ -19,11 +19,13 @@ static void dwtInit(void)
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 
     if (DWT->CTRL & DWT_CTRL_NOCYCCNT_Msk) {
+        dwt_available = 0U;
         return;
     }
 
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    dwt_available = 1U;
 }
 
 /**
