@@ -5,19 +5,7 @@
 #include "tim.h"
 
 
-/**
- * @brief Get the RCC clock-enable mask for a timer peripheral.
- *
- * Maps a timer peripheral instance to its clock-enable bit. APB1
- * timers (TIM2, TIM3, TIM4, TIM5, TIM6, TIM7) map to bits in
- * RCC->APB1ENR1; APB2 timers (TIM1, TIM8, TIM15, TIM16, TIM17,
- * TIM20) map to bits in RCC->APB2ENR.
- *
- * @param TIMx Timer peripheral instance.
- *
- * @return Clock-enable bit mask, or 0 if TIMx is not recognized.
- */
-uint32_t getTIMxClock(const TIM_TypeDef *TIMx) {
+uint32_t getTIMxClockEnableBit(const TIM_TypeDef *TIMx) {
     switch ((uintptr_t)TIMx) {
         /* APB1 */
         case (uintptr_t)TIM2:
@@ -52,21 +40,8 @@ uint32_t getTIMxClock(const TIM_TypeDef *TIMx) {
     }
 }
 
-/**
- * @brief Enable or disable a timer peripheral's clock.
- *
- * Looks up the clock-enable bit for @p TIMx via getTIMxClock() and
- * sets or clears it.
- *
- * @param TIMx Timer peripheral instance.
- * @param state Desired state:
- *        - STATE_ENABLE: enable the timer's clock.
- *        - STATE_DISABLE: disable the timer's clock.
- */
-void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state) {
-    const uint32_t tim = getTIMxClock(TIMx);
-    volatile uint32_t *enable_register;
 
+static volatile uint32_t *getTIMxEnableRegister(const TIM_TypeDef *TIMx) {
     switch ((uintptr_t)TIMx) {
         case (uintptr_t)TIM2:
         case (uintptr_t)TIM3:
@@ -74,8 +49,7 @@ void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state) {
         case (uintptr_t)TIM5:
         case (uintptr_t)TIM6:
         case (uintptr_t)TIM7:
-            enable_register = &RCC->APB1ENR1;
-            break;
+            return &RCC->APB1ENR1;
 
         case (uintptr_t)TIM1:
         case (uintptr_t)TIM8:
@@ -83,12 +57,17 @@ void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state) {
         case (uintptr_t)TIM16:
         case (uintptr_t)TIM17:
         case (uintptr_t)TIM20:
-            enable_register = &RCC->APB2ENR;
-            break;
+            return &RCC->APB2ENR;
 
         default:
-            panic("Invalid tim in toggleTIMxClock()");
+            panic("Invalid tim in setTIMxClock()");
     }
+}
+
+
+void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state) {
+    const uint32_t tim = getTIMxClockEnableBit(TIMx);
+    volatile uint32_t *enable_register = getTIMxEnableRegister(TIMx);
 
     switch (state) {
         case STATE_ENABLE:
@@ -101,7 +80,7 @@ void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state) {
 
         default:
             // unreachable if types are respected
-            panic("Invalid enable state in toggleTIMxClock()");
+            panic("Invalid enable state in setTIMxClock()");
     }
     (void)*enable_register;
 }

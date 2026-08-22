@@ -10,10 +10,19 @@
 #include "system/panic/panic.h"
 
 
-/** @brief Get a timer peripheral's RCC clock mask. @param TIMx Timer peripheral. @return RCC clock-enable mask. */
-uint32_t getTIMxClock(const TIM_TypeDef *TIMx);
+/**
+ * @brief Get the RCC clock-enable mask for a timer peripheral.
+ * @param TIMx Timer peripheral instance.
+ * @return Corresponding RCC clock-enable mask.
+ */
+uint32_t getTIMxClockEnableBit(const TIM_TypeDef *TIMx);
 
-/** @brief Set a timer peripheral clock state. @param TIMx Timer peripheral. @param state Desired clock state. */
+/**
+ * @brief Enable or disable a timer peripheral clock.
+ * @param TIMx Timer peripheral instance.
+ * @param state Desired clock state.
+ * @note Updates RCC->APB1ENR1 or RCC->APB2ENR according to the timer.
+ */
 void setTIMxClock(const TIM_TypeDef *TIMx, EnableState state);
 
 #endif //STM32G474RE_DRIVERS_TIM_H

@@ -6,10 +6,12 @@
 #include "system/panic/panic.h"
 
 
-/** @brief Get a GPIO peripheral's RCC clock mask. @param GPIOx GPIO port. @return RCC clock-enable mask. */
-uint32_t getGPIOxClock(const GPIO_TypeDef *GPIOx);
-
-/** @brief Set a GPIO peripheral clock state. @param GPIOx GPIO port. @param state Desired clock state. */
+/**
+ * @brief Enable or disable the peripheral clock for a GPIO port.
+ * @param GPIOx GPIO peripheral instance.
+ * @param state Desired clock state.
+ * @note Modifies RCC->AHB2ENR and reads it back after the write.
+ */
 void setGPIOxClock(const GPIO_TypeDef *GPIOx, EnableState state);
 
 // == types ==
@@ -49,24 +51,69 @@ typedef enum {
 
 
 // == api ==
-/** @brief Set a GPIO pin's operating mode. @param GPIOx GPIO port. @param pin Pin number. @param mode Pin mode. */
+/**
+ * @brief Set a GPIO pin's operating mode.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param mode Mode to write to the MODER register.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 void setPinMode(GPIO_TypeDef *GPIOx, Pin pin, PinMode mode);
 
-/** @brief Set a GPIO pin's pull configuration. @param GPIOx GPIO port. @param pin Pin number. @param pull Pull configuration. */
+/**
+ * @brief Set a GPIO pin's alternate function.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param af Alternate-function value to write to AFR.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
+void setAlternateFunction(GPIO_TypeDef *GPIOx, uint8_t pin, AlternateFunction af);
+
+/**
+ * @brief Set a GPIO pin's pull configuration.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param pull Pull configuration to write to PUPDR.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 void setPinPull(GPIO_TypeDef *GPIOx, Pin pin, PinPull pull);
 
-/** @brief Set a GPIO pin's output speed. @param GPIOx GPIO port. @param pin Pin number. @param slew Output speed. */
+/**
+ * @brief Set a GPIO pin's output speed.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param slew Output speed to write to OSPEEDR.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 void setPinSlew(GPIO_TypeDef *GPIOx, Pin pin, PinSlew slew);
 
-/** @brief Set a GPIO pin's output type. @param GPIOx GPIO port. @param pin Pin number. @param otype Output type. */
+/**
+ * @brief Set a GPIO pin's output type.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param otype Push-pull or open-drain output type.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 void setPinOType(GPIO_TypeDef *GPIOx, uint8_t pin, PinOType otype);
 
-/** @brief Set or reset a GPIO output pin. @param GPIOx GPIO port. @param pin Pin number. @param value Output state. */
+/**
+ * @brief Set or reset a GPIO output pin.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @param value Output state to write through BSRR.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 void digitalWrite(GPIO_TypeDef *GPIOx,
                   uint8_t pin,
                   EnableState value);
 
-/** @brief Read a GPIO input pin. @param GPIOx GPIO port. @param pin Pin number. @return Pin state. */
+/**
+ * @brief Read a GPIO input pin.
+ * @param GPIOx GPIO port.
+ * @param pin Pin number.
+ * @return STATE_ENABLE when the input is high; otherwise STATE_DISABLE.
+ * @note Calls panic() when pin is outside the range 0 to 15.
+ */
 EnableState digitalRead(const GPIO_TypeDef *GPIOx, Pin pin);
 
 #endif //NUCLEO_G474RE_DRIVER_GPIO_H

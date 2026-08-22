@@ -12,34 +12,43 @@
 
 
 /**
- * @brief Check whether ITM stimulus port 0 is enabled and can accept a byte.
- * @return true when the port is enabled and ready; otherwise false.
- * This check is non-blocking, so it is also safe to use from error paths.
+ * @brief Check whether ITM stimulus port 0 can accept output.
+ * @return true when tracing and port 0 are enabled and ready; otherwise false.
  */
 bool console_is_ready(void);
 
-/** @brief Initialize ITM stimulus port 0 for console output. */
+/**
+ * @brief Initialize ITM stimulus port 0 for console output.
+ * @note Enables trace access and writes ITM control registers.
+ */
 void console_init(void);
 
 /**
- * @brief Attempt to send one byte through ITM stimulus port 0 without waiting.
- * @param c Character to send.
- * @return true when the character is accepted; otherwise false.
- * Returns false if tracing is disabled or the port is busy.
+ * @brief Attempt to write one character through ITM port 0.
+ * @param c Character to write.
+ * @return true when the character was accepted; otherwise false.
  */
 bool console_try_putc(char c);
 
-/** @brief Send one character through ITM port 0. @param c Character to send. */
+/**
+ * @brief Write one character through ITM port 0.
+ * @param c Character to write.
+ * @note Drops the character when ITM is unavailable.
+ */
 void console_putc(char c);
-/** @brief Send a null-terminated string through ITM port 0. @param str String to send. */
+
+/**
+ * @brief Write a null-terminated string through ITM port 0.
+ * @param str String to write, or NULL.
+ * @note Stops and drops remaining characters when ITM is unavailable.
+ */
 void console_puts(const char *str);
 
 /**
- * @brief Write bytes through ITM port 0 without blocking.
+ * @brief Write bytes through ITM port 0.
  * @param buffer Bytes to write, or NULL.
- * @param len Maximum number of bytes to write.
- * @return Number of bytes accepted.
- * A null buffer is treated as an empty buffer.
+ * @param len Number of bytes to write.
+ * @return Number of bytes accepted by ITM.
  */
 size_t console_write(const char *buffer, size_t len);
 

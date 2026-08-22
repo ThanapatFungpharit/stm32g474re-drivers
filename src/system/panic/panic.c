@@ -7,11 +7,6 @@
 #include "system/console/console.h"
 
 
-/**
- * @brief Report a panic message and halt execution.
- * @param str Message to report, or NULL.
- * @note Disables interrupts, writes to the console, and then waits indefinitely.
- */
 _Noreturn void panic(const char *str)
 {
     __disable_irq();
