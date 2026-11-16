@@ -1,81 +1,136 @@
-//
-// Created by user on 8/19/2026.
-//
+#ifndef STM32G474RE_SYSTEM_TIME_H
+#define STM32G474RE_SYSTEM_TIME_H
 
-#ifndef STM32G474RE_DRIVERS_TIME_H
-#define STM32G474RE_DRIVERS_TIME_H
-
-#include "stm32g474xx.h"
-#include "stdbool.h"
-
-
-// === VARIABLE ===
 /**
- * @brief Check whether the DWT cycle counter is available.
- * @return Nonzero when the DWT cycle counter is available.
+ * @file time.h
+ * @brief System time base, delays and timeouts.
+ *
+ * Two independent counters are used:
+ *
+ * - **SysTick** interrupts once per millisecond and drives time_millis() and
+ *   time_micros(). SysTick keeps running in Sleep mode, so time keeps
+ *   advancing while time_delay_ms() waits with WFI. Microseconds are
+ *   interpolated from the SysTick down-counter.
+ * - **DWT CYCCNT** counts core clock cycles and drives busy-wait delays
+ *   (time_delay_us()) and timeouts (TimeTimeout). It does not need
+ *   time_init() or interrupts, so drivers can use bounded waits from reset,
+ *   inside interrupt handlers, and with interrupts masked.
+ *
+ * Call time_init() once after the clock is configured. clock_set_preset()
+ * calls time_clock_changed() automatically, so time stays continuous and
+ * monotonic across clock changes (with at most 1 ms of rounding per change).
  */
-uint8_t systick_has_cycle_counter(void);
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* --- Initialisation --------------------------------------------------------- */
 
 /**
- * @brief Get the extended DWT cycle count.
- * @return Current 64-bit cycle count, or zero when unavailable.
+ * @brief Start the 1 kHz SysTick time base and the DWT cycle counter.
+ * @note Uses SystemCoreClock; the SysTick interrupt gets the lowest priority.
+ *       Calling it again restarts the millisecond count from zero.
  */
-uint64_t dwt_cycle_count64(void);
+void time_init(void);
+
+/** @brief Return true once time_init() has run. */
+bool time_is_initialized(void);
 
 /**
- * @brief Get elapsed time in microseconds.
- * @return Current 64-bit microsecond count.
+ * @brief Reprogram SysTick after the core clock frequency changed.
+ * @note Called by clock_set_preset(). Call it yourself only if you change
+ *       the clock tree with your own code. Does nothing before time_init().
  */
-uint64_t micros64(void);
+void time_clock_changed(void);
 
 /**
- * @brief Get elapsed time in milliseconds.
- * @return Current 64-bit millisecond count.
- */
-uint64_t millis64(void);
-
-/**
- * @brief Get the low 32 bits of the microsecond count.
- * @return Current microsecond count truncated to 32 bits.
- */
-uint32_t micros(void);
-
-/**
- * @brief Get the low 32 bits of the millisecond count.
- * @return Current millisecond count truncated to 32 bits.
- */
-uint32_t millis(void);
-
-// === API ===
-/**
- * @brief Initialize SysTick and timing state.
- * @note Updates SystemCoreClock, configures DWT, and programs SysTick.
- */
-void systick_init(void);
-
-/**
- * @brief Reconfigure timing after a core-clock change.
- * @note Temporarily disables interrupts while updating timing state and SysTick.
- */
-void systick_clock_updated(void);
-
-/**
- * @brief Handle a SysTick interrupt.
- * @note Updates the cycle or millisecond time base.
+ * @brief SysTick exception handler (overrides the weak startup symbol).
  */
 void SysTick_Handler(void);
 
-/**
- * @brief Delay execution for a number of milliseconds.
- * @param ms Milliseconds to delay.
- * @note Waits for the time base and enters sleep while it advances.
- */
-void delay_ms(uint32_t ms);
+/* --- Reading time ----------------------------------------------------------- */
+
+/** @brief Milliseconds since time_init() (64-bit, never wraps in practice). */
+uint64_t time_millis64(void);
+
+/** @brief Microseconds since time_init() (64-bit). */
+uint64_t time_micros64(void);
+
+/** @brief Milliseconds since time_init(), wrapping every ~49.7 days. */
+uint32_t time_millis(void);
+
+/** @brief Microseconds since time_init(), wrapping every ~71.6 minutes. */
+uint32_t time_micros(void);
 
 /**
- * @brief Delay execution for a number of microseconds.
- * @param us Microseconds to delay.
+ * @brief Read the free-running 32-bit core cycle counter.
+ * @note Enables the DWT cycle counter on first use. Wraps every
+ *       2^32 / SystemCoreClock seconds (about 25 s at 170 MHz).
  */
-void delay_us(uint32_t us);
+uint32_t time_cycles(void);
 
-#endif //STM32G474RE_DRIVERS_TIME_H
+/* --- Delays ----------------------------------------------------------------- */
+
+/**
+ * @brief Wait for at least @p ms milliseconds.
+ * @note In thread mode with interrupts enabled and the time base running,
+ *       the core sleeps (WFI) between SysTick interrupts. Otherwise (inside
+ *       an interrupt handler, with interrupts masked, or before time_init())
+ *       it falls back to a cycle-counting busy wait.
+ */
+void time_delay_ms(uint32_t ms);
+
+/**
+ * @brief Busy-wait for at least @p us microseconds.
+ * @note Cycle accurate; works before time_init() and with interrupts masked.
+ *       Interrupt handlers that run during the wait lengthen it.
+ */
+void time_delay_us(uint32_t us);
+
+/* --- Timeouts --------------------------------------------------------------- */
+
+/**
+ * @brief State of a running timeout. Treat the fields as private.
+ *
+ * Elapsed cycles are accumulated in 64 bits on every check, so a timeout can
+ * be longer than the 32-bit counter wrap period as long as it is checked
+ * at least once per wrap period.
+ */
+typedef struct {
+    uint32_t last;
+    uint64_t elapsed;
+    uint64_t limit;
+    bool     forever;
+} TimeTimeout;
+
+/**
+ * @brief Start a timeout of @p us microseconds.
+ * @param timeout Timeout state to initialise.
+ * @param us Duration; DRV_WAIT_FOREVER (UINT32_MAX) never expires and 0
+ *           expires on the first check.
+ */
+void time_timeout_start_us(TimeTimeout *timeout, uint32_t us);
+
+/** @brief Start a timeout of @p ms milliseconds (UINT32_MAX never expires). */
+void time_timeout_start_ms(TimeTimeout *timeout, uint32_t ms);
+
+/** @brief Return true once the timeout has elapsed. */
+bool time_timeout_expired(TimeTimeout *timeout);
+
+/**
+ * @brief Convert a duration to core clock cycles.
+ * @param us Duration in microseconds.
+ * @param clock_hz Core clock in hertz.
+ * @return Cycle count, rounded up.
+ */
+uint64_t time_us_to_cycles(uint64_t us, uint32_t clock_hz);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* STM32G474RE_SYSTEM_TIME_H */
