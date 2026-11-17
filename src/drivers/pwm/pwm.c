@@ -1,134 +1,136 @@
 #include "pwm.h"
 
+#include "drivers/internal/drv_internal.h"
 
-void initPWM(
-    TIM_TypeDef *TIMx,
-    const PWMChannel channel,
-    const uint32_t prescaler,
-    const uint32_t period)
+
+/* OCxM = 0110: PWM mode 1 (active while CNT < CCRx). */
+#define OCM_PWM1 6UL
+
+static bool channel_valid(const TIM_TypeDef *tim, const PwmChannel channel)
 {
-    setTIMxClock(TIMx, STATE_ENABLE);
-
-    TIMx->CR1 &= ~TIM_CR1_CEN;
-
-    // timer_counter_clock = timer_clock / (PSC + 1)
-    TIMx->PSC = prescaler;
-
-    /* period = ARR + 1 timer ticks
-     * counter runs 0 ... ARR
-     */
-    TIMx->ARR = period;
-
-    /*
-     * PWM mode 1:
-     * OCxM = 110
-     * OCxPE = 1
-     */
-    switch (channel) {
-        case PWM_CHANNEL_1:
-            TIMx->CCMR1 =
-                (TIMx->CCMR1 &
-                 ~(TIM_CCMR1_CC1S |
-                   TIM_CCMR1_OC1M |
-                   TIM_CCMR1_OC1PE)) |
-                (6U << TIM_CCMR1_OC1M_Pos) |
-                TIM_CCMR1_OC1PE;
-
-            TIMx->CCR1 = 0;
-            TIMx->CCER |= TIM_CCER_CC1E;
-            break;
-
-        case PWM_CHANNEL_2:
-            TIMx->CCMR1 =
-                (TIMx->CCMR1 &
-                 ~(TIM_CCMR1_CC2S |
-                   TIM_CCMR1_OC2M |
-                   TIM_CCMR1_OC2PE)) |
-                (6U << TIM_CCMR1_OC2M_Pos) |
-                TIM_CCMR1_OC2PE;
-
-            TIMx->CCR2 = 0;
-            TIMx->CCER |= TIM_CCER_CC2E;
-            break;
-
-        case PWM_CHANNEL_3:
-            TIMx->CCMR2 =
-                (TIMx->CCMR2 &
-                 ~(TIM_CCMR2_CC3S |
-                   TIM_CCMR2_OC3M |
-                   TIM_CCMR2_OC3PE)) |
-                (6U << TIM_CCMR2_OC3M_Pos) |
-                TIM_CCMR2_OC3PE;
-
-            TIMx->CCR3 = 0;
-            TIMx->CCER |= TIM_CCER_CC3E;
-            break;
-
-        case PWM_CHANNEL_4:
-            TIMx->CCMR2 =
-                (TIMx->CCMR2 &
-                 ~(TIM_CCMR2_CC4S |
-                   TIM_CCMR2_OC4M |
-                   TIM_CCMR2_OC4PE)) |
-                (6U << TIM_CCMR2_OC4M_Pos) |
-                TIM_CCMR2_OC4PE;
-
-            TIMx->CCR4 = 0;
-            TIMx->CCER |= TIM_CCER_CC4E;
-            break;
-
-        default:
-            return;
-    }
-
-    // ARR preload
-    TIMx->CR1 |= TIM_CR1_ARPE;
-
-    /*
-     * Advanced-control timers require Main Output Enable.
-     * TIM1/TIM8/TIM20 are advanced timers on G474.
-     */
-    if ((TIMx == TIM1) || (TIMx == TIM8) || (TIMx == TIM20)) {
-        TIMx->BDTR |= TIM_BDTR_MOE;
-    }
-
-    // Generate an update event so PSC/ARR are loaded.
-    TIMx->EGR = TIM_EGR_UG;
-
-    // free timer
-    TIMx->CR1 |= TIM_CR1_CEN;
+    return ((uint32_t)channel >= 1U) &&
+           ((uint32_t)channel <= tim_get_channel_count(tim));
 }
 
-
-void pwmWrite(
-    TIM_TypeDef *TIMx,
-    const PWMChannel channel,
-    uint32_t value)
+static volatile uint32_t *ccr_register(TIM_TypeDef *tim, const PwmChannel channel)
 {
-    if (value > TIMx->ARR) {
-        value = TIMx->ARR;
-    }
-
     switch (channel) {
-        case PWM_CHANNEL_1:
-            TIMx->CCR1 = value;
-            break;
-
-        case PWM_CHANNEL_2:
-            TIMx->CCR2 = value;
-            break;
-
-        case PWM_CHANNEL_3:
-            TIMx->CCR3 = value;
-            break;
-
-        case PWM_CHANNEL_4:
-            TIMx->CCR4 = value;
-            break;
-
-        default:
-            return;
+        case PWM_CHANNEL_1: return &tim->CCR1;
+        case PWM_CHANNEL_2: return &tim->CCR2;
+        case PWM_CHANNEL_3: return &tim->CCR3;
+        case PWM_CHANNEL_4: return &tim->CCR4;
+        default:            return NULL;
     }
-    // Transfer preloaded CCR value into the active register.
-    TIMx->EGR = TIM_EGR_UG;
+}
+
+DrvStatus pwm_init(TIM_TypeDef *tim, const uint32_t psc, const uint32_t arr)
+{
+    if (tim_get_channel_count(tim) == 0U) {
+        return DRV_ERR_PARAM;
+    }
+
+    const DrvStatus status = tim_init(tim, psc, arr);
+    if (status != DRV_OK) {
+        return status;
+    }
+
+    if (tim_has_main_output(tim)) {
+        drv_reg_modify(&tim->BDTR, 0U, TIM_BDTR_MOE);
+    }
+
+    tim_start(tim);
+    return DRV_OK;
+}
+
+DrvStatus pwm_init_frequency(TIM_TypeDef *tim, const uint32_t frequency_hz)
+{
+    uint32_t psc;
+    uint32_t arr;
+
+    if (tim_get_channel_count(tim) == 0U) {
+        return DRV_ERR_PARAM;
+    }
+
+    const DrvStatus status = tim_calc_period(tim_get_clock_hz(tim), frequency_hz,
+                                             tim_get_max_arr(tim), &psc, &arr);
+    if (status != DRV_OK) {
+        return status;
+    }
+    return pwm_init(tim, psc, arr);
+}
+
+DrvStatus pwm_enable_channel(TIM_TypeDef *tim, const PwmChannel channel,
+                             const PwmPolarity polarity)
+{
+    if (!channel_valid(tim, channel) ||
+        ((polarity != PWM_POLARITY_ACTIVE_HIGH) && (polarity != PWM_POLARITY_ACTIVE_LOW))) {
+        return DRV_ERR_PARAM;
+    }
+
+    const uint32_t index = (uint32_t)channel - 1U;          /* 0..3 */
+    volatile uint32_t *ccmr = (index < 2U) ? &tim->CCMR1 : &tim->CCMR2;
+    const uint32_t shift = (index & 1U) * 8U;               /* channel 2/4 fields are 8 bits up */
+
+    /* CCxS = 00 (output), OCxM = PWM mode 1, OCxPE = 1 (preload).
+     * OCxM bit 3 sits at bit 16 (+shift) on the STM32G4. */
+    const uint32_t clear = (TIM_CCMR1_CC1S | TIM_CCMR1_OC1FE | TIM_CCMR1_OC1PE |
+                            TIM_CCMR1_OC1M | TIM_CCMR1_OC1CE) << shift;
+    const uint32_t set = ((OCM_PWM1 << TIM_CCMR1_OC1M_Pos) | TIM_CCMR1_OC1PE) << shift;
+
+    const uint32_t ccer_shift = index * 4U;
+    const uint32_t ccer_enable = TIM_CCER_CC1E << ccer_shift;
+    const uint32_t ccer_polarity = TIM_CCER_CC1P << ccer_shift;
+
+    /* The channel must be disabled while CCxS is written. */
+    drv_reg_modify(&tim->CCER, ccer_enable, 0U);
+    drv_reg_modify(ccmr, clear, set);
+    *ccr_register(tim, channel) = 0U;
+    drv_reg_modify(&tim->CCER, ccer_polarity,
+                   ((polarity == PWM_POLARITY_ACTIVE_LOW) ? ccer_polarity : 0U) | ccer_enable);
+    return DRV_OK;
+}
+
+DrvStatus pwm_disable_channel(TIM_TypeDef *tim, const PwmChannel channel)
+{
+    if (!channel_valid(tim, channel)) {
+        return DRV_ERR_PARAM;
+    }
+    const uint32_t index = (uint32_t)channel - 1U;
+    drv_reg_modify(&tim->CCER, TIM_CCER_CC1E << (index * 4U), 0U);
+    return DRV_OK;
+}
+
+uint32_t pwm_get_period_ticks(const TIM_TypeDef *tim)
+{
+    DRV_ASSERT(tim_is_valid(tim));
+    /* ARR is at most 0xFFFFFFFF on TIM2/5; the period then saturates. */
+    return (tim->ARR == UINT32_MAX) ? UINT32_MAX : (tim->ARR + 1U);
+}
+
+uint32_t pwm_duty_to_compare(const uint32_t period_ticks, uint32_t permille)
+{
+    if (permille > 1000U) {
+        permille = 1000U;
+    }
+    return (uint32_t)((((uint64_t)period_ticks * permille) + 500U) / 1000U);
+}
+
+void pwm_set_compare(TIM_TypeDef *tim, const PwmChannel channel, uint32_t value)
+{
+    DRV_ASSERT(channel_valid(tim, channel));
+
+    const uint32_t period = pwm_get_period_ticks(tim);
+    if (value > period) {
+        value = period;
+    }
+    /* CCR > ARR keeps the output permanently active (100 % duty). No update
+     * event is generated: the preloaded value is applied at the next period
+     * boundary without disturbing the running counter. */
+    *ccr_register(tim, channel) = value;
+}
+
+void pwm_set_duty_permille(TIM_TypeDef *tim, const PwmChannel channel,
+                           const uint32_t permille)
+{
+    pwm_set_compare(tim, channel, pwm_duty_to_compare(pwm_get_period_ticks(tim), permille));
 }
